@@ -11,6 +11,7 @@ from collections import namedtuple
 from collections import deque
 from typing import List, Tuple
 from NeuralNet import DQN
+from ExperienceReplay import Transition, ReplayMemory
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("--gamma",
@@ -48,107 +49,16 @@ parser.add_argument("--min-eps",
 FLAGS = parser.parse_args()
 
 
-class DQN(torch.nn.Module):
-    def __init__(self, input_dim: int, output_dim: int, hidden_dim: int) -> None:
-        """DQN Network
-        Args:
-            input_dim (int): `state` dimension.
-                `state` is 2-D tensor of shape (n, input_dim)
-            output_dim (int): Number of actions.
-                Q_value is 2-D tensor of shape (n, output_dim)
-            hidden_dim (int): Hidden dimension in fc layer
-        """
-        super(DQN, self).__init__()
-
-        self.layer1 = torch.nn.Sequential(
-            torch.nn.Linear(input_dim, hidden_dim),
-            torch.nn.BatchNorm1d(hidden_dim),
-            torch.nn.PReLU()
-        )
-
-        self.layer2 = torch.nn.Sequential(
-            torch.nn.Linear(hidden_dim, hidden_dim),
-            torch.nn.BatchNorm1d(hidden_dim),
-            torch.nn.PReLU()
-        )
-
-        self.final = torch.nn.Linear(hidden_dim, output_dim)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Returns a Q_value
-        Args:
-            x (torch.Tensor): `State` 2-D tensor of shape (n, input_dim)
-        Returns:
-            torch.Tensor: Q_value, 2-D tensor of shape (n, output_dim)
-        """
-        x = x.type(torch.float)
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.final(x)
-
-        return x
-
-
-Transition = namedtuple("Transition",
-                        field_names=["state", "action", "reward", "next_state", "done"])
-
-
-class ReplayMemory(object):
-
-    def __init__(self, capacity: int) -> None:
-        """Replay memory class
-        Args:
-            capacity (int): Max size of this memory
-        """
-        self.capacity = capacity
-        self.cursor = 0
-        self.memory = []
-
-    def push(self,
-             state: np.ndarray,
-             action: int,
-             reward: int,
-             next_state: np.ndarray,
-             done: bool) -> None:
-        """Creates `Transition` and insert
-        Args:
-            state (np.ndarray): 1-D tensor of shape (input_dim,)
-            action (int): action index (0 <= action < output_dim)
-            reward (int): reward value
-            next_state (np.ndarray): 1-D tensor of shape (input_dim,)
-            done (bool): whether this state was last step
-        """
-        if len(self) < self.capacity:
-            self.memory.append(None)
-
-        self.memory[self.cursor] = Transition(state,
-                                              action, reward, next_state, done)
-        self.cursor = (self.cursor + 1) % self.capacity
-
-    def sample(self, batch_size: int) -> List[Transition]:
-        """Returns a minibatch of `Transition` randomly
-        Args:
-            batch_size (int): Size of mini-bach
-        Returns:
-            List[Transition]: Minibatch of `Transition`
-        """
-        return random.sample(self.memory, batch_size)
-
-    def __len__(self) -> int:
-        """Returns the length """
-        return len(self.memory)
-
-
 class Agent(object):
 
-    def __init__(self, input_dim: int, output_dim: int, hidden_dim: int) -> None:
+    def __init__(self, input_dim: int, output_dim: int) -> None:
         """Agent class that choose action and train
         Args:
             input_dim (int): input dimension
             output_dim (int): output dimension
             hidden_dim (int): hidden dimension
         """
-        self.dqn = DQN(input_dim, output_dim, hidden_dim).float()
+        self.dqn = DQN(input_dim, output_dim).float()
         self.input_dim = input_dim
         self.output_dim = output_dim
 
@@ -225,16 +135,16 @@ def train_helper(agent: Agent, minibatch: List[Transition], gamma: float) -> flo
     next_states = np.vstack([x.next_state for x in minibatch])
     done = np.array([x.done for x in minibatch])
 
-    # Q_predict = agent.get_Q(states)
-    # Q_target = Q_predict.clone().data.numpy()
-    # Q_target[np.arange(len(Q_target)), actions] = rewards + gamma * np.max(agent.get_Q(next_states).data.numpy(), axis=1) * ~done
-    # Q_target = agent._to_variable(Q_target)
+    Q_predict = agent.get_Q(states)
+    Q_target = Q_predict.clone().data.numpy()
+    Q_target[np.arange(len(Q_target)), actions] = rewards + gamma * np.max(agent.get_Q(next_states).data.numpy(), axis=1) * ~done
+    Q_target = agent._to_variable(Q_target)
 
     # My attempt:
-    Q_predict = agent.get_Q(states).gather(1, torch.tensor(actions, dtype=torch.int64).unsqueeze(-1))
-    max_next_state_Qs, _ = agent.get_Q(next_states).max(dim=1)
-    max_next_state_Qs = max_next_state_Qs.unsqueeze(-1)
-    Q_target = torch.tensor(rewards).unsqueeze(-1) + gamma * max_next_state_Qs * torch.tensor(~done).unsqueeze(-1)
+    # Q_predict = agent.get_Q(states).gather(1, torch.tensor(actions, dtype=torch.int64).unsqueeze(-1))
+    # max_next_state_Qs, _ = agent.get_Q(next_states).max(dim=1)
+    # max_next_state_Qs = max_next_state_Qs.unsqueeze(-1)
+    # Q_target = torch.tensor(rewards).unsqueeze(-1) + gamma * max_next_state_Qs * torch.tensor(~done).unsqueeze(-1)
 
     return agent.train(Q_predict.float(), Q_target.float())
 
@@ -317,10 +227,10 @@ def main():
     """
     try:
         env = gym.make(FLAGS.env)
-        env = gym.wrappers.Monitor(env, directory="monitors", force=True)
+        # env = gym.wrappers.Monitor(env, directory="monitors", force=True)
         rewards = deque(maxlen=100)
         input_dim, output_dim = get_env_dim(env)
-        agent = Agent(input_dim, output_dim, FLAGS.hidden_dim)
+        agent = Agent(input_dim, output_dim)
         replay_memory = ReplayMemory(FLAGS.capacity)
 
         for i in range(FLAGS.n_episode):
