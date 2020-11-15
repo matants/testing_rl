@@ -12,16 +12,16 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 from ExperienceReplay_prev_implementation import Transition, ReplayMemory
-from NeuralNet import DQN
+from NeuralNet import DQN_conv
 
-env = gym.make('CartPole-v1')
+env = gym.make('procgen:procgen-coinrun-v0')
 
 # set up matplotlib
 is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
     from IPython import display
 
-plt.ion()
+plt.ioff()
 
 # if gpu is to be used
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -33,19 +33,21 @@ EPS_START = 1
 EPS_END = 0.01
 EPS_DECAY_TIME = 50
 TARGET_UPDATE = 12
-PRINT_PER = 10
+PRINT_PER = 1
 # LEARNING_RATE = 1e-3
-NUM_EPISODES = 401
-STEPS_PER_TRAINS = 4
-TRAIN_ITERATIONS = 2
+NUM_EPISODES = 2001
+STEPS_PER_TRAINS = 16
+TRAIN_ITERATIONS = 1
 
 # Get neural net input size from gym observation space
-n_obs = env.observation_space.shape[0]
+n_channels = env.observation_space.shape[2]
 # Get number of actions from gym action space
 n_actions = env.action_space.n
+height = env.observation_space.shape[0]
+width = env.observation_space.shape[1]
 
-policy_net = DQN(n_obs, n_actions).to(device).float()
-target_net = DQN(n_obs, n_actions).to(device).float()
+policy_net = DQN_conv(n_channels, n_actions, height, width).to(device).float()
+target_net = DQN_conv(n_channels, n_actions, height, width).to(device).float()
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
@@ -152,6 +154,7 @@ for i_episode in range(NUM_EPISODES):
     # Initialize the environment and state
     state = env.reset()
     state = torch.tensor(state, dtype=torch.float)
+    state = state.permute(2, 0, 1)
     tot_reward = 0
     for t in count():
         # Select and perform an action
@@ -163,6 +166,7 @@ for i_episode in range(NUM_EPISODES):
             next_state = None
         else:
             next_state = torch.tensor(next_state, dtype=torch.float)
+            next_state = next_state.permute(2, 0, 1)
 
         # Store the transition in memory
         tot_reward += reward
@@ -188,10 +192,12 @@ print("Training complete")
 plot_rewards()
 plt.show()
 # Showoff round
+env = gym.make("procgen:procgen-coinrun-v0", start_level=0, num_levels=1, render_mode="human")
 state = env.reset()
 for t in count():
     env.render()
     state = torch.tensor(state, dtype=torch.float)
+    state = state.permute(2, 0, 1)
     action = select_action(state, is_training=False)
     state, reward, done, _ = env.step(action.item())
     sleep(0.01)
@@ -202,4 +208,3 @@ for t in count():
 print(steps_done)
 env.close()
 print('Run finished')
-sleep(600)

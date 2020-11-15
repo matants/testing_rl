@@ -42,43 +42,36 @@ class DQN(nn.Module):
         return self.head(x)
 
 
-# Implementation from source:
-# class DQN(torch.nn.Module):
-#     def __init__(self, input_dim: int, output_dim: int, hidden_dim=12) -> None:
-#         """DQN Network
-#         Args:
-#             input_dim (int): `state` dimension.
-#                 `state` is 2-D tensor of shape (n, input_dim)
-#             output_dim (int): Number of actions.
-#                 Q_value is 2-D tensor of shape (n, output_dim)
-#             hidden_dim (int): Hidden dimension in fc layer
-#         """
-#         super(DQN, self).__init__()
-#
-#         self.layer1 = torch.nn.Sequential(
-#             torch.nn.Linear(input_dim, hidden_dim),
-#             torch.nn.BatchNorm1d(hidden_dim),
-#             torch.nn.PReLU()
-#         )
-#
-#         self.layer2 = torch.nn.Sequential(
-#             torch.nn.Linear(hidden_dim, hidden_dim),
-#             torch.nn.BatchNorm1d(hidden_dim),
-#             torch.nn.PReLU()
-#         )
-#
-#         self.final = torch.nn.Linear(hidden_dim, output_dim)
-#
-#     def forward(self, x: torch.Tensor) -> torch.Tensor:
-#         """Returns a Q_value
-#         Args:
-#             x (torch.Tensor): `State` 2-D tensor of shape (n, input_dim)
-#         Returns:
-#             torch.Tensor: Q_value, 2-D tensor of shape (n, output_dim)
-#         """
-#         x = x.type(torch.float)
-#         x = self.layer1(x)
-#         x = self.layer2(x)
-#         x = self.final(x)
-#
-#         return x
+class DQN_conv(nn.Module):
+    def __init__(self, in_channels=3, n_actions=15, height=64, width=64):
+        """
+        Initialize Deep Q Network
+        Args:
+            in_channels (int): number of input channels
+            n_actions (int): number of outputs
+        """
+        super(DQN_conv, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=8, stride=4)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
+        self.bn3 = nn.BatchNorm2d(64)
+
+        def conv2d_size_out(size, kernel_size=5, stride=2):
+            return (size - (kernel_size - 1) - 1) // stride + 1
+
+        convw = conv2d_size_out(conv2d_size_out(conv2d_size_out(width, 8, 4), 4, 2), 3, 1)
+        convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(height, 8, 4), 4, 2), 3, 1)
+        linear_input_size = convw * convh * 64
+
+        self.fc4 = nn.Linear(linear_input_size, 512)
+        self.head = nn.Linear(512, n_actions)
+
+    def forward(self, x):
+        x = x.float() / 255
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = F.relu(self.bn3(self.conv3(x)))
+        x = F.relu(self.fc4(x.view(x.size(0), -1)))
+        return self.head(x)
