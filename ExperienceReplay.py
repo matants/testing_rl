@@ -3,51 +3,43 @@ import random
 from typing import List
 import numpy as np
 
-Transition = namedtuple("Transition",
-                        field_names=["state", "action", "reward", "next_state", "done"])
+Transition = namedtuple('Transition',
+                        ('state', 'action', 'next_state', 'reward'))
 
 
-class ReplayMemory(object):
+class ReplayMemory:
 
-    def __init__(self, capacity: int) -> None:
-        """Replay memory class
-        Args:
-            capacity (int): Max size of this memory
-        """
+    def __init__(self, capacity):
         self.capacity = capacity
-        self.cursor = 0
         self.memory = []
+        self.position = 0
 
-    def push(self,
-             state: np.ndarray,
-             action: int,
-             reward: int,
-             next_state: np.ndarray,
-             done: bool) -> None:
-        """Creates `Transition` and insert
-        Args:
-            state (np.ndarray): 1-D tensor of shape (input_dim,)
-            action (int): action index (0 <= action < output_dim)
-            reward (int): reward value
-            next_state (np.ndarray): 1-D tensor of shape (input_dim,)
-            done (bool): whether this state was last step
-        """
-        if len(self) < self.capacity:
+    def push(self, *args):
+        """Saves a transition."""
+        if len(self.memory) < self.capacity:
             self.memory.append(None)
+        self.memory[self.position] = Transition(*args)
+        self.position = (self.position + 1) % self.capacity
 
-        self.memory[self.cursor] = Transition(state,
-                                              action, reward, next_state, done)
-        self.cursor = (self.cursor + 1) % self.capacity
-
-    def sample(self, batch_size: int) -> List[Transition]:
-        """Returns a minibatch of `Transition` randomly
-        Args:
-            batch_size (int): Size of mini-bach
-        Returns:
-            List[Transition]: Minibatch of `Transition`
-        """
+    def sample(self, batch_size):
         return random.sample(self.memory, batch_size)
 
-    def __len__(self) -> int:
-        """Returns the length """
+    def __len__(self):
         return len(self.memory)
+
+
+class ReservoirReplayMemory(ReplayMemory):
+    def __init__(self, capacity):
+        super().__init__(capacity)
+
+    def push(self, *args, N):
+        if self.capacity > N:
+            assert N == len(
+                self.memory), "N should be number of samples inserted so far and when smaller than capacity should be equal to the length of memory."
+            self.memory.append(Transition(*args))
+        else:
+            self.position = random.randint(0, N)
+            if self.position < self.capacity:
+                self.memory[self.position] = Transition(*args)
+
+    

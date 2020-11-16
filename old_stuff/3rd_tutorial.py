@@ -5,13 +5,11 @@ import argparse
 import torch
 import torch.nn
 import numpy as np
-import random
 import gym
-from collections import namedtuple
 from collections import deque
 from typing import List, Tuple
 from NeuralNet import DQN
-from ExperienceReplay import Transition, ReplayMemory
+from old_stuff.ExperienceReplay import Transition, ReplayMemory
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("--gamma",

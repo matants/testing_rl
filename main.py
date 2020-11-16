@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-from ExperienceReplay_prev_implementation import Transition, ReplayMemory
+from ExperienceReplay import Transition, ReplayMemory
 from NeuralNet import DQN
 
 env = gym.make('CartPole-v1')
