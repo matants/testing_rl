@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class DQN(nn.Module):
-    def __init__(self, input_size: int, output_size: int, num_hidden_layers=2, hidden_layer_size=12):
+    def __init__(self, input_size: int, output_size: int, num_hidden_layers=2, hidden_layer_size=64):
         super(DQN, self).__init__()
         self.input_size = input_size
         self.output_size = output_size

@@ -11,96 +11,16 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
+from Constants import *
 from ExperienceReplay import Transition, ReplayMemory
-from NeuralNet import DQN
-
-env = gym.make('CartPole-v1')
+from select_action import calc_eps_linear, select_action
+from display_results import plot_rewards, print_average_over_episodes
 
 # set up matplotlib
 is_ipython = 'inline' in matplotlib.get_backend()
-if is_ipython:
-    from IPython import display
-
-plt.ion()
-
-# if gpu is to be used
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-EXP_REPLAY_SIZE = 50000
-BATCH_SIZE = 64
-GAMMA = 0.99
-EPS_START = 1
-EPS_END = 0.01
-EPS_DECAY_TIME = 50
-TARGET_UPDATE = 12
-PRINT_PER = 10
-# LEARNING_RATE = 1e-3
-NUM_EPISODES = 401
-STEPS_PER_TRAINS = 4
-TRAIN_ITERATIONS = 2
-
-# Get neural net input size from gym observation space
-n_obs = env.observation_space.shape[0]
-# Get number of actions from gym action space
-n_actions = env.action_space.n
-
-policy_net = DQN(n_obs, n_actions).to(device).float()
-target_net = DQN(n_obs, n_actions).to(device).float()
-target_net.load_state_dict(policy_net.state_dict())
-target_net.eval()
-
-optimizer = optim.Adam(policy_net.parameters())
-memory = ReplayMemory(EXP_REPLAY_SIZE)
-
-
-def calc_eps_linear(episode, eps_start=EPS_START, eps_end=EPS_END, decay_time=EPS_DECAY_TIME):
-    eps_ret = np.max([eps_end, eps_start * (1 - episode / decay_time)])
-    # print("eps = {:5.2f}".format(eps_ret))
-    return eps_ret
-
-
-def select_action(state, is_training=True, eps_threshold=None):
-    sample = random.random()
-    if eps_threshold is None or sample > eps_threshold or not is_training:
-        with torch.no_grad():
-            # t.max(1) will return largest column value of each row.
-            # second column on max result is index of where max element was
-            # found, so we pick action with the larger expected reward.
-            policy_net.train(mode=False)
-            return policy_net(state.unsqueeze(0)).argmax().view(1, 1)
-    else:
-        return torch.tensor([[random.randrange(n_actions)]], device=device, dtype=torch.long)
-
+plt.ioff()
 
 episode_rewards = []
-
-
-def plot_rewards():
-    plt.figure(2)
-    plt.clf()
-    rewards_t = torch.tensor(episode_rewards, dtype=torch.float)
-    plt.title('Training...')
-    plt.xlabel('Episode')
-    plt.ylabel('Reward')
-    plt.plot(rewards_t.numpy())
-    # Take 100 episode averages and plot them too
-    if len(rewards_t) >= 100:
-        means = rewards_t.unfold(0, 100, 1).mean(1).view(-1)
-        means = torch.cat((torch.zeros(99), means))
-        plt.plot(means.numpy())
-
-    plt.pause(0.001)  # pause a bit so that plots are updated
-    if is_ipython:
-        display.clear_output(wait=True)
-        display.display(plt.gcf())
-
-
-def print_average_over_episodes(n=100):
-    rewards_t = torch.tensor(episode_rewards, dtype=torch.float)
-    if len(rewards_t) < n:
-        return
-    means = rewards_t.unfold(0, n, 1).mean(1).view(-1)
-    print("Episode {}: Mean reward over last {} episodes: {}".format(len(rewards_t), n, means[-1]))
 
 
 def optimize_model():
@@ -151,18 +71,22 @@ steps_done = 0
 for i_episode in range(NUM_EPISODES):
     # Initialize the environment and state
     state = env.reset()
-    state = torch.tensor(state, dtype=torch.float)
+    state = torch.tensor(state, dtype=torch.float, device=device)
+    if IS_PROCGEN:
+        state = state.permute(2, 0, 1)
     tot_reward = 0
     for t in count():
         # Select and perform an action
-        action = select_action(state, eps_threshold=calc_eps_linear(i_episode))
+        action = select_action(policy_net, state, eps_threshold=calc_eps_linear(i_episode))
         next_state, reward, done, _ = env.step(action.item())
 
         # Observe new state
         if done:
             next_state = None
         else:
-            next_state = torch.tensor(next_state, dtype=torch.float)
+            next_state = torch.tensor(next_state, dtype=torch.float, device=device)
+            if IS_PROCGEN:
+                next_state = next_state.permute(2, 0, 1)
 
         # Store the transition in memory
         tot_reward += reward
@@ -179,20 +103,24 @@ for i_episode in range(NUM_EPISODES):
         if done:
             episode_rewards.append(tot_reward)
             if i_episode % PRINT_PER == 0:
-                print_average_over_episodes(PRINT_PER)
+                print_average_over_episodes(episode_rewards, PRINT_PER)
             break
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())
 print("Training complete")
-plot_rewards()
+plot_rewards(episode_rewards)
 plt.show()
 # Showoff round
+if IS_PROCGEN:
+    env = gym.make("procgen:procgen-coinrun-v0", start_level=0, num_levels=1, render_mode="human")
 state = env.reset()
 for t in count():
     env.render()
-    state = torch.tensor(state, dtype=torch.float)
-    action = select_action(state, is_training=False)
+    state = torch.tensor(state, dtype=torch.float, device=device)
+    if IS_PROCGEN:
+        state = state.permute(2, 0, 1)
+    action = select_action(policy_net, state, is_training=False)
     state, reward, done, _ = env.step(action.item())
     sleep(0.01)
     if done:
@@ -202,4 +130,3 @@ for t in count():
 print(steps_done)
 env.close()
 print('Run finished')
-sleep(600)

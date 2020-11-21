@@ -1,3 +1,4 @@
 /monitors/*
 /.idea/*
 /__pycache__/*
+/pybullet-gym/*
