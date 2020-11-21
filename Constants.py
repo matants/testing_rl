@@ -2,6 +2,7 @@ import torch
 import torch.optim as optim
 from ExperienceReplay import *
 import gym
+import pybulletgym
 from NeuralNet import *
 
 EXP_REPLAY_SIZE = 50000
@@ -13,20 +14,28 @@ EPS_DECAY_TIME = 50
 TARGET_UPDATE = 8
 PRINT_PER = 10
 # LEARNING_RATE = 1e-3
-NUM_EPISODES = 301
-STEPS_PER_TRAINS = 4
+NUM_EPISODES = 31
+STEPS_PER_TRAINS = 1
 TRAIN_ITERATIONS = 1
-IS_PROCGEN = False
-
+IS_PROCGEN = True
+BETA_MER = 1
+GAMMA_MER = 0.3
+STEPS_MER = 1
 
 if IS_PROCGEN:
-    env = gym.make('procgen:procgen-coinrun-v0')
+    env_name = 'procgen:procgen-coinrun-v0'
 else:
-    env = gym.make('CartPole-v1')
+    env_name = 'CartPole-v1'
+
+
+env = gym.make(env_name)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-n_actions = env.action_space.n
+try:
+    n_actions = env.action_space.n
+except AttributeError:
+    n_actions = env.action_space.shape[0]
 
 if IS_PROCGEN:
     # Get neural net input size from gym observation space

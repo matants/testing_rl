@@ -113,7 +113,7 @@ plot_rewards(episode_rewards)
 plt.show()
 # Showoff round
 if IS_PROCGEN:
-    env = gym.make("procgen:procgen-coinrun-v0", start_level=0, num_levels=1, render_mode="human")
+    env = gym.make(env_name, start_level=0, num_levels=1, render_mode="human")
 state = env.reset()
 for t in count():
     env.render()

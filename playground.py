@@ -4,8 +4,9 @@ from itertools import count
 # # print(gym.envs.registry.all())
 #
 # env = gym.make('procgen:procgen-coinrun-v0')
-env = gym.make('HumanoidPyBulletEnv-v0')
+env = gym.make('HalfCheetahPyBulletEnv-v0')
 # env = gym.wrappers.Monitor(env, directory="monitors", force=True)
+n_actions = env.action_space.n
 for i_episode in range(20):
     env.render()
     observation = env.reset()

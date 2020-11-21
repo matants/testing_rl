@@ -65,8 +65,9 @@ class DQN_conv(nn.Module):
         convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(height, 8, 4), 4, 2), 3, 1)
         linear_input_size = convw * convh * 64
 
-        self.fc4 = nn.Linear(linear_input_size, 512)
-        self.head = nn.Linear(512, n_actions)
+        self.fc4 = nn.Linear(linear_input_size, 64)
+        self.fc5 = nn.Linear(64, 64)
+        self.head = nn.Linear(64, n_actions)
 
     def forward(self, x):
         x = x.float() / 255
@@ -74,4 +75,5 @@ class DQN_conv(nn.Module):
         x = F.relu(self.bn2(self.conv2(x)))
         x = F.relu(self.bn3(self.conv3(x)))
         x = F.relu(self.fc4(x.view(x.size(0), -1)))
+        x = F.relu(self.fc5(x))
         return self.head(x)
