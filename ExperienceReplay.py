@@ -31,15 +31,15 @@ class ReplayMemory:
 class ReservoirReplayMemory(ReplayMemory):
     def __init__(self, capacity):
         super().__init__(capacity)
+        self.N = 0
 
-    def push(self, *args, N):
-        if self.capacity > N:
-            assert N == len(
+    def push(self, *args):
+        if self.capacity > self.N:
+            assert self.N == len(
                 self.memory), "N should be number of samples inserted so far and when smaller than capacity should be equal to the length of memory."
             self.memory.append(Transition(*args))
         else:
-            self.position = random.randint(0, N)
+            self.position = random.randint(0, self.N)
             if self.position < self.capacity:
                 self.memory[self.position] = Transition(*args)
-
-    
+        self.N += 1

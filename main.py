@@ -23,10 +23,20 @@ plt.ioff()
 episode_rewards = []
 
 
-def optimize_model():
+def optimize_model(state, action, next_state, reward):
     if len(memory) < BATCH_SIZE:
         return
     transitions = memory.sample(BATCH_SIZE)
+    # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
+    # detailed explanation). This converts batch-array of Transitions
+    # to Transition of batch-arrays.
+    if IS_MER:
+        train_MER(transitions, state, action, next_state, reward)
+    else:
+        train_batch(transitions)
+
+
+def train_batch(transitions):
     # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
     # detailed explanation). This converts batch-array of Transitions
     # to Transition of batch-arrays.
@@ -42,11 +52,6 @@ def optimize_model():
     action_batch = torch.cat(batch.action)
     reward_batch = torch.cat(batch.reward)
 
-    # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
-    # columns of actions taken. These are the actions which would've been taken
-    # for each batch state according to policy_net
-    state_action_values = policy_net(state_batch).gather(1, action_batch)
-
     # Compute V(s_{t+1}) for all next states.
     # Expected values of actions for non_final_next_states are computed based
     # on the "older" target_net; selecting their best reward with max(1)[0].
@@ -58,13 +63,51 @@ def optimize_model():
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
     # Compute loss
+
+    # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
+    # columns of actions taken. These are the actions which would've been taken
+    # for each batch state according to policy_net
+    state_action_values = policy_net(state_batch).gather(1, action_batch)
+
     policy_net.train(mode=True)
-    loss = nn.MSELoss()(state_action_values, expected_state_action_values.unsqueeze(1))
+    loss = loss_func(state_action_values, expected_state_action_values.unsqueeze(1))
 
     # Optimize the model
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
+
+
+def train_MER(transitions, state, action, next_state, reward):
+    # insert current experience in random spot inside sampled batch
+    transitions.insert(random.randint(0, len(transitions)), Transition(state, action, next_state, reward))
+    state_dict_before = policy_net.state_dict()
+    for transition in transitions:
+
+        if transition.next_state is None:
+            expected_state_action_value = transition.reward
+        else:
+            expected_state_action_value = transition.reward + GAMMA * target_net(
+                transition.next_state.unsqueeze(0)).max().detach()
+
+        state_action_val = policy_net(transition.state.unsqueeze(0)).view(-1, 1)[transition.action]
+        policy_net.train()
+        loss = loss_func(state_action_val.squeeze(), expected_state_action_value.squeeze())
+
+        # Optimize the model
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+    # reptile step
+    reptile_step(BETA_MER, state_dict_before)
+
+
+def reptile_step(step_size, state_dict_before):
+    current_state_dict = policy_net.state_dict()
+    for key in current_state_dict:
+        current_state_dict[key] = state_dict_before[key] + step_size * (
+                current_state_dict[key] - state_dict_before[key])
+    policy_net.load_state_dict(current_state_dict)
 
 
 steps_done = 0
@@ -91,15 +134,20 @@ for i_episode in range(NUM_EPISODES):
         # Store the transition in memory
         tot_reward += reward
         reward = torch.tensor([reward], device=device)
-        memory.push(state, action, next_state, reward)
-        # Move to the next state
-        state = next_state
 
         # Perform one step of the optimization (on the target network)
-        steps_done += 1
         if steps_done % STEPS_PER_TRAINS == 0:
+            state_dict_before = policy_net.state_dict()
             for _ in range(TRAIN_ITERATIONS):
-                optimize_model()
+                optimize_model(state, action, next_state, reward)
+            if IS_MER:
+                # reptile step
+                reptile_step(GAMMA_MER, state_dict_before)
+        # store transition in replay memory
+        memory.push(state, action, next_state, reward)
+        # Move to the next state
+        steps_done += 1
+        state = next_state
         if done:
             episode_rewards.append(tot_reward)
             if i_episode % PRINT_PER == 0:
@@ -108,12 +156,13 @@ for i_episode in range(NUM_EPISODES):
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())
+
 print("Training complete")
 plot_rewards(episode_rewards)
 plt.show()
 # Showoff round
 if IS_PROCGEN:
-    env = gym.make(env_name, start_level=0, num_levels=1, render_mode="human")
+    env = gym.make(env_name, render_mode="human")
 state = env.reset()
 for t in count():
     env.render()

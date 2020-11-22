@@ -2,31 +2,29 @@ import torch
 import torch.optim as optim
 from ExperienceReplay import *
 import gym
-import pybulletgym
 from NeuralNet import *
 
 EXP_REPLAY_SIZE = 50000
-BATCH_SIZE = 128
+BATCH_SIZE = 16
 GAMMA = 0.99
 EPS_START = 1
 EPS_END = 0.01
 EPS_DECAY_TIME = 50
-TARGET_UPDATE = 8
-PRINT_PER = 10
-# LEARNING_RATE = 1e-3
-NUM_EPISODES = 31
+TARGET_UPDATE = 1
+PRINT_PER = 1
+LEARNING_RATE = 1e-3  # MER paper uses 1e-4, but this seems better?
+NUM_EPISODES = 201
 STEPS_PER_TRAINS = 1
 TRAIN_ITERATIONS = 1
-IS_PROCGEN = True
+IS_PROCGEN = False
 BETA_MER = 1
 GAMMA_MER = 0.3
-STEPS_MER = 1
+IS_MER = True
 
 if IS_PROCGEN:
     env_name = 'procgen:procgen-coinrun-v0'
 else:
     env_name = 'CartPole-v1'
-
 
 env = gym.make(env_name)
 
@@ -55,5 +53,10 @@ else:
     target_net.load_state_dict(policy_net.state_dict())
     target_net.eval()
 
-optimizer = optim.Adam(policy_net.parameters())
-memory = ReplayMemory(EXP_REPLAY_SIZE)
+optimizer = optim.SGD(policy_net.parameters(), lr=LEARNING_RATE)
+# optimizer = optim.Adam(policy_net.parameters(), lr=LEARNING_RATE)
+if IS_MER:
+    memory = ReservoirReplayMemory(EXP_REPLAY_SIZE)
+else:
+    memory = ReplayMemory(EXP_REPLAY_SIZE)
+loss_func = nn.MSELoss()
