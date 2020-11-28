@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from itertools import count
-from time import sleep
+from time import sleep, time
 
 import torch
 import torch.nn as nn
@@ -20,19 +20,20 @@ from display_results import plot_rewards, print_average_over_episodes
 is_ipython = 'inline' in matplotlib.get_backend()
 plt.ioff()
 
-episode_rewards = []
 
 
-def optimize_model(state, action, next_state, reward):
-    if len(memory) < BATCH_SIZE:
-        return
-    transitions = memory.sample(BATCH_SIZE)
-    # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
-    # detailed explanation). This converts batch-array of Transitions
-    # to Transition of batch-arrays.
+def optimize_model(recent_transitions):
     if IS_MER:
-        train_MER(transitions, state, action, next_state, reward)
+        optimize_model_mer_batches(recent_transitions)
     else:
+        optimize_model_standard()
+
+
+def optimize_model_standard():
+    if len(memory) < BATCH_SIZE * REPTILE_BATCH_SIZE:
+        return
+    for k in range(REPTILE_BATCH_SIZE):
+        transitions = memory.sample(BATCH_SIZE)
         train_batch(transitions)
 
 
@@ -57,7 +58,7 @@ def train_batch(transitions):
     # on the "older" target_net; selecting their best reward with max(1)[0].
     # This is merged based on the mask, such that we'll have either the expected
     # state value or 0 in case the state was final.
-    next_state_values = torch.zeros(BATCH_SIZE, device=device)
+    next_state_values = torch.zeros(len(transitions), device=device)
     next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach()
     # Compute the expected Q values
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
@@ -78,27 +79,17 @@ def train_batch(transitions):
     optimizer.step()
 
 
-def train_MER(transitions, state, action, next_state, reward):
-    # insert current experience in random spot inside sampled batch
-    transitions.insert(random.randint(0, len(transitions)), Transition(state, action, next_state, reward))
-    state_dict_before = policy_net.state_dict()
-    for transition in transitions:
-
-        if transition.next_state is None:
-            expected_state_action_value = transition.reward
+def optimize_model_mer_batches(recent_transitions):
+    if len(memory) < BATCH_SIZE * REPTILE_BATCH_SIZE:
+        return
+    use_recent_transitions_index = random.randint(0, REPTILE_BATCH_SIZE - 1)
+    for k in range(REPTILE_BATCH_SIZE):
+        if k == use_recent_transitions_index:
+            transitions = recent_transitions
         else:
-            expected_state_action_value = transition.reward + GAMMA * target_net(
-                transition.next_state.unsqueeze(0)).max().detach()
-
-        state_action_val = policy_net(transition.state.unsqueeze(0)).view(-1, 1)[transition.action]
-        policy_net.train()
-        loss = loss_func(state_action_val.squeeze(), expected_state_action_value.squeeze())
-
-        # Optimize the model
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-    # reptile step
+            transitions = memory.sample(BATCH_SIZE)
+        state_dict_before = policy_net.state_dict()
+        train_batch(transitions)
     reptile_step(BETA_MER, state_dict_before)
 
 
@@ -111,8 +102,13 @@ def reptile_step(step_size, state_dict_before):
 
 
 steps_done = 0
+episode_rewards = []
+episode_durations = []
+recent_transitions = []
+start_time = time()
 for i_episode in range(NUM_EPISODES):
     # Initialize the environment and state
+    episode_start_time = time()
     state = env.reset()
     state = torch.tensor(state, dtype=torch.float, device=device)
     if IS_PROCGEN:
@@ -131,33 +127,40 @@ for i_episode in range(NUM_EPISODES):
             if IS_PROCGEN:
                 next_state = next_state.permute(2, 0, 1)
 
-        # Store the transition in memory
         tot_reward += reward
         reward = torch.tensor([reward], device=device)
+        # store transition in replay memory
+        if IS_MER:
+            recent_transitions.append(Transition(state, action, next_state, reward))
+        else:
+            memory.push(state, action, next_state, reward)
 
         # Perform one step of the optimization (on the target network)
         if steps_done % STEPS_PER_TRAINS == 0:
             state_dict_before = policy_net.state_dict()
             for _ in range(TRAIN_ITERATIONS):
-                optimize_model(state, action, next_state, reward)
+                optimize_model(recent_transitions)
             if IS_MER:
                 # reptile step
                 reptile_step(GAMMA_MER, state_dict_before)
-        # store transition in replay memory
-        memory.push(state, action, next_state, reward)
+                for transition in recent_transitions:
+                    memory.push(*transition)
+                recent_transitions = []
+
         # Move to the next state
         steps_done += 1
         state = next_state
         if done:
             episode_rewards.append(tot_reward)
+            episode_durations.append(time() - episode_start_time)
             if i_episode % PRINT_PER == 0:
-                print_average_over_episodes(episode_rewards, PRINT_PER)
+                print_average_over_episodes(episode_rewards, start_time, PRINT_PER)
             break
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())
 
-print("Training complete")
+print("Training complete. Total time: {:.2f} seconds.".format(time() - start_time))
 plot_rewards(episode_rewards)
 plt.show()
 # Showoff round

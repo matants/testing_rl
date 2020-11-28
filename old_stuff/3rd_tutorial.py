@@ -18,7 +18,7 @@ parser.add_argument("--gamma",
                     help="Discount rate for Q_target")
 parser.add_argument("--env",
                     type=str,
-                    default="CartPole-v0",
+                    default="CartPole-v1",
                     help="Gym environment name")
 parser.add_argument("--n-episode",
                     type=int,
@@ -238,11 +238,11 @@ def main():
 
             rewards.append(r)
 
-            if len(rewards) == rewards.maxlen:
-
-                if np.mean(rewards) >= 200:
-                    print("Game cleared in {} games with {}".format(i + 1, np.mean(rewards)))
-                    break
+            # if len(rewards) == rewards.maxlen:
+            #
+            #     if np.mean(rewards) >= 200:
+            #         print("Game cleared in {} games with {}".format(i + 1, np.mean(rewards)))
+            #         break
     finally:
         env.close()
 

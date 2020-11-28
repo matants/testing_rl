@@ -6,20 +6,22 @@ from NeuralNet import *
 
 EXP_REPLAY_SIZE = 50000
 BATCH_SIZE = 16
+REPTILE_BATCH_SIZE = 16
 GAMMA = 0.99
 EPS_START = 1
 EPS_END = 0.01
-EPS_DECAY_TIME = 50
+EPS_DECAY_TIME = 100
 TARGET_UPDATE = 1
 PRINT_PER = 1
 LEARNING_RATE = 1e-3  # MER paper uses 1e-4, but this seems better?
-NUM_EPISODES = 201
-STEPS_PER_TRAINS = 1
+NUM_EPISODES = 2000
+STEPS_PER_TRAINS = BATCH_SIZE
 TRAIN_ITERATIONS = 1
 IS_PROCGEN = False
 BETA_MER = 1
 GAMMA_MER = 0.3
-IS_MER = True
+IS_MER = False
+
 
 if IS_PROCGEN:
     env_name = 'procgen:procgen-coinrun-v0'
@@ -53,8 +55,8 @@ else:
     target_net.load_state_dict(policy_net.state_dict())
     target_net.eval()
 
-optimizer = optim.SGD(policy_net.parameters(), lr=LEARNING_RATE)
-# optimizer = optim.Adam(policy_net.parameters(), lr=LEARNING_RATE)
+# optimizer = optim.SGD(policy_net.parameters(), lr=LEARNING_RATE)
+optimizer = optim.Adam(policy_net.parameters(), lr=LEARNING_RATE)
 if IS_MER:
     memory = ReservoirReplayMemory(EXP_REPLAY_SIZE)
 else:
